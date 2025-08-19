@@ -17,8 +17,12 @@
     "@cosmjs/tendermint-rpc": "^0.31.3",
     "@types/bip39": "^3.0.0",
     "bip39": "^3.1.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "stream-browserify": "^3.0.0",
+    "util": "^0.12.5",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
