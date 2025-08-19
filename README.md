@@ -47,6 +47,9 @@ ignite chain serve
 git clone https://github.com/Rexingleung/cosmos-chain-frontend.git
 cd cosmos-chain-frontend
 
+# 清理缓存（如果之前安装过）
+rm -rf node_modules package-lock.json yarn.lock
+
 # 使用 pnpm（推荐）
 pnpm install
 
@@ -158,20 +161,39 @@ export const CHAIN_CONFIG: ChainInfo = {
 
 ## ⚠️ 常见问题
 
-### 1. 连接失败
+### 1. Buffer is not defined 错误
+如果遇到 "Buffer is not defined" 错误，请按以下步骤解决：
+
+```bash
+# 清理所有缓存
+rm -rf node_modules package-lock.json yarn.lock .vite
+
+# 重新安装依赖
+npm install
+
+# 重启开发服务器
+npm run dev
+```
+
+项目已配置了 Buffer polyfill，包括：
+- Vite 配置中的 alias 映射
+- 全局 Buffer 对象注入
+- TypeScript 类型声明
+
+### 2. 连接失败
 如果遇到连接问题，请检查：
 - Ignite 链是否正在运行
 - 端口是否被其他程序占用
 - 网络配置是否正确
 
-### 2. 转账失败
+### 3. 转账失败
 转账失败可能的原因：
 - 余额不足
 - 无效的接收地址
 - 网络连接问题
 - 手续费不足
 
-### 3. CosmJS 版本问题
+### 4. CosmJS 版本问题
 如果遇到 CosmJS 相关错误：
 ```bash
 # 清除缓存并重新安装
@@ -179,7 +201,23 @@ rm -rf node_modules package-lock.json
 npm install
 ```
 
+### 5. 开发环境问题
+如果开发环境出现问题：
+```bash
+# 清理 Vite 缓存
+rm -rf .vite
+
+# 重启开发服务器
+npm run dev
+```
+
 ## 🔄 更新日志
+
+### v1.1.0 (2025-08-20)
+- ✅ 修复 Buffer is not defined 错误
+- ✅ 添加完整的 polyfills 支持
+- ✅ 优化浏览器兼容性
+- ✅ 完善错误处理
 
 ### v1.0.0 (2025-08-20)
 - ✅ 基础链信息查看功能
