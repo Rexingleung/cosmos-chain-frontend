@@ -3,9 +3,10 @@ import { ChainInfo } from './components/ChainInfo/ChainInfo';
 import { WalletManager } from './components/WalletManager/WalletManager';
 import { Transfer } from './components/Transfer/Transfer';
 import { DataQuery } from './components/DataQuery/DataQuery';
+import { Faucet } from './components/Faucet/Faucet';
 import './App.css';
 
-type TabType = 'chain' | 'wallet' | 'transfer' | 'query';
+type TabType = 'chain' | 'wallet' | 'faucet' | 'transfer' | 'query';
 
 function App() {
   const [activeTab, setActiveTab] = useState<TabType>('chain');
@@ -13,6 +14,7 @@ function App() {
   const tabs = [
     { id: 'chain' as TabType, label: '链信息', icon: '🔗' },
     { id: 'wallet' as TabType, label: '钱包管理', icon: '👛' },
+    { id: 'faucet' as TabType, label: '水龙头', icon: '💧' },
     { id: 'transfer' as TabType, label: '转账', icon: '💸' },
     { id: 'query' as TabType, label: '数据查询', icon: '🔍' }
   ];
@@ -23,6 +25,8 @@ function App() {
         return <ChainInfo />;
       case 'wallet':
         return <WalletManager />;
+      case 'faucet':
+        return <Faucet />;
       case 'transfer':
         return <Transfer />;
       case 'query':
