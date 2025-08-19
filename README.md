@@ -93,7 +93,8 @@ src/
 │   └── cosmosService.ts # Cosmos链交互服务
 ├── types/              # TypeScript类型定义
 ├── config/             # 配置文件
-└── utils/              # 工具函数
+├── utils/              # 工具函数
+└── main.tsx            # 应用入口
 ```
 
 ## 🔧 配置说明
@@ -116,39 +117,6 @@ export const CHAIN_CONFIG: ChainInfo = {
   restEndpoint: 'http://localhost:1317',
   faucetEndpoint: 'http://localhost:4500'  // 水龙头端点
 };
-```
-
-### 水龙头 API 配置
-
-水龙头功能支持多种常见的 API 格式：
-
-1. **POST /credit** - 标准格式
-```json
-{
-  "address": "cosmos1...",
-  "denom": "stake",
-  "amount": "10000000"
-}
-```
-
-2. **POST /faucet** - 简化格式
-```json
-{
-  "address": "cosmos1..."
-}
-```
-
-3. **GET 参数格式**
-```
-/faucet?address=cosmos1...&denom=stake
-```
-
-4. **POST /request** - Cosmos 标准格式
-```json
-{
-  "address": "cosmos1...",
-  "coins": ["10000000stake"]
-}
 ```
 
 ### 测试账户
@@ -180,26 +148,16 @@ export const CHAIN_CONFIG: ChainInfo = {
 - **智能提示**：提供详细的使用说明和状态反馈
 - **自动刷新**：获取代币后自动刷新钱包余额
 
-#### 水龙头使用方法：
-1. 创建或选择钱包
-2. 点击"水龙头"标签页
-3. 选择快速获取按钮或自定义数量
-4. 等待代币发放（通常几秒钟）
-5. 余额会自动更新
-
-### 4. 余额查询
-- 查看当前钱包的所有代币余额
-- 支持多种代币显示
-- 一键刷新余额信息
-
-### 5. 转账功能
+### 4. 转账功能
 - 向指定 Cosmos 地址转账
-- 实时余额验证
+- 实时余额验证和地址格式验证
 - 自动计算手续费
 - 支持添加交易备注
 - 快速填入测试地址功能
+- 智能最大值计算（预留手续费）
+- 详细的转账确认信息
 
-### 6. 数据查询
+### 5. 数据查询
 - **区块查询**：通过区块高度查看区块详情
 - **交易查询**：通过交易哈希查看交易信息
 - **余额查询**：查看任意地址的代币余额
@@ -212,10 +170,10 @@ export const CHAIN_CONFIG: ChainInfo = {
 - 建议在测试网络上进行功能测试
 - 水龙头功能仅限测试环境使用
 
-## ⚠️ 常见问题
+## ⚠️ 常见问题及解决方案
 
 ### 1. Buffer is not defined 错误
-如果遇到 "Buffer is not defined" 错误，请按以下步骤解决：
+如果遇到 "Buffer is not defined" 错误：
 
 ```bash
 # 清理所有缓存
@@ -228,13 +186,30 @@ npm install
 npm run dev
 ```
 
-项目已配置了 Buffer polyfill，包括：
-- Vite 配置中的 alias 映射
-- 全局 Buffer 对象注入
-- TypeScript 类型声明
+### 2. 转账失败 - "Invalid string. Length must be a multiple of 4"
+这个错误已通过以下方式修复：
 
-### 2. 水龙头无法使用
-如果水龙头功能不可用，请检查：
+**已实现的修复**：
+- ✅ 改进助记词清理和验证函数
+- ✅ 使用正确的 Gas 价格格式 (`0.0025stake`)
+- ✅ 优化 CosmJS 客户端配置
+- ✅ 添加完善的错误处理和用户友好提示
+- ✅ 实现助记词格式验证（12/15/18/21/24个单词）
+
+**如果仍有问题**：
+```bash
+# 1. 检查助记词格式
+# 确保助记词是12或24个单词，用空格分隔，无多余字符
+
+# 2. 重新导入钱包
+# 使用项目的导入功能重新导入钱包
+
+# 3. 检查网络连接
+curl http://localhost:26657/status
+```
+
+### 3. 水龙头无法使用
+如果水龙头功能不可用：
 
 ```bash
 # 检查水龙头端点是否可访问
@@ -244,41 +219,22 @@ curl http://localhost:4500
 ignite chain serve --verbose
 ```
 
-**常见水龙头 API 格式**：
-- Ignite 默认: `POST http://localhost:4500/credit`
-- 某些链: `GET http://localhost:4500?address=cosmos1...`
-- 自定义: 检查链的文档说明
+**水龙头 API 格式支持**：
+- Ignite 默认: `POST /credit`
+- 参数格式: `GET /?address=cosmos1...`
+- 标准格式: `POST /request`
 
-### 3. 连接失败
-如果遇到连接问题，请检查：
-- Ignite 链是否正在运行
-- 端口是否被其他程序占用
-- 网络配置是否正确
+### 4. 连接失败
+如果遇到连接问题：
+- 确保 Ignite 链正在运行
+- 检查端口是否被占用
+- 验证网络配置是否正确
 
-### 4. 转账失败
-转账失败可能的原因：
-- 余额不足
-- 无效的接收地址
-- 网络连接问题
-- 手续费不足
-
-### 5. CosmJS 版本问题
-如果遇到 CosmJS 相关错误：
-```bash
-# 清除缓存并重新安装
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### 6. 开发环境问题
-如果开发环境出现问题：
-```bash
-# 清理 Vite 缓存
-rm -rf .vite
-
-# 重启开发服务器
-npm run dev
-```
+### 5. 转账验证失败
+常见转账问题：
+- **余额不足**：确保有足够代币和手续费
+- **地址格式错误**：必须是有效的 cosmos 地址
+- **网络问题**：检查链连接状态
 
 ## 🛠 水龙头集成指南
 
@@ -319,6 +275,14 @@ export const CHAIN_CONFIG: ChainInfo = {
 
 ## 🔄 更新日志
 
+### v1.3.0 (2025-08-20)
+- ✅ 修复转账功能中的 Base64 编码错误
+- ✅ 改进助记词处理和验证
+- ✅ 优化 Gas 价格配置
+- ✅ 增强错误处理和用户提示
+- ✅ 添加转账安全验证
+- ✅ 完善工具函数库
+
 ### v1.2.0 (2025-08-20)
 - ✅ 新增水龙头功能
 - ✅ 支持多种水龙头 API 格式
@@ -340,7 +304,6 @@ export const CHAIN_CONFIG: ChainInfo = {
 - ✅ 数据查询功能
 - ✅ 响应式UI设计
 - ✅ 中文界面
-- 🐛 修复 StargateClient 连接问题
 
 ## 🤝 贡献
 
