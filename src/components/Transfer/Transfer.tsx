@@ -3,14 +3,18 @@ import { useWalletStore } from '../../stores/walletStore';
 import { cosmosService } from '../../services/cosmosService';
 import { TransferForm } from '../../types';
 import { ALICE_ADDRESS, BOB_ADDRESS } from '../../config/network';
-import { validateCosmosAddress, getErrorMessage, cleanMnemonic } from '../../utils/helpers';
+import { validateCosmosAddress, getErrorMessage, cleanMnemonic, validateMnemonic } from '../../utils/helpers';
 import './Transfer.css';
+
+type WalletSource = 'current' | 'mnemonic';
 
 export const Transfer: React.FC = () => {
   const { currentWallet, balances, getBalances } = useWalletStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [walletSource, setWalletSource] = useState<WalletSource>('current');
+  const [inputMnemonic, setInputMnemonic] = useState('');
   
   const [form, setForm] = useState<TransferForm>({
     toAddress: '',
@@ -36,10 +40,33 @@ export const Transfer: React.FC = () => {
     }));
   };
 
+  const handleWalletSourceChange = (source: WalletSource) => {
+    setWalletSource(source);
+    setError(null);
+    setSuccess(null);
+    if (source === 'mnemonic') {
+      setInputMnemonic('');
+    }
+  };
+
   const validateForm = (): boolean => {
-    if (!currentWallet) {
-      setError('请先连接钱包');
+    // 验证钱包来源
+    if (walletSource === 'current' && !currentWallet) {
+      setError('请先创建或选择钱包，或选择使用助记词转账');
       return false;
+    }
+
+    if (walletSource === 'mnemonic') {
+      if (!inputMnemonic.trim()) {
+        setError('请输入助记词');
+        return false;
+      }
+      
+      const cleanedMnemonic = cleanMnemonic(inputMnemonic);
+      if (!validateMnemonic(cleanedMnemonic)) {
+        setError('无效的助记词格式。请确保输入12、15、18、21或24个单词，用空格分隔');
+        return false;
+      }
     }
 
     const trimmedAddress = form.toAddress.trim();
@@ -53,7 +80,8 @@ export const Transfer: React.FC = () => {
       return false;
     }
 
-    if (trimmedAddress === currentWallet.address) {
+    // 如果使用当前钱包，检查是否向自己转账
+    if (walletSource === 'current' && trimmedAddress === currentWallet!.address) {
       setError('不能向自己转账');
       return false;
     }
@@ -69,32 +97,34 @@ export const Transfer: React.FC = () => {
       return false;
     }
 
-    // 检查余额是否足够
-    const balance = balances.find(b => b.denom === form.denom);
-    if (!balance) {
-      setError(`您没有 ${form.denom} 代币`);
-      return false;
-    }
+    // 只有使用当前钱包时才检查余额
+    if (walletSource === 'current') {
+      const balance = balances.find(b => b.denom === form.denom);
+      if (!balance) {
+        setError(`您没有 ${form.denom} 代币`);
+        return false;
+      }
 
-    const balanceAmount = parseInt(balance.amount) / 1000000; // 转换为基本单位
-    const transferAmount = amount;
-    
-    if (transferAmount > balanceAmount) {
-      setError(`余额不足。当前余额: ${balanceAmount.toLocaleString()} ${form.denom}`);
-      return false;
-    }
+      const balanceAmount = parseInt(balance.amount) / 1000000;
+      const transferAmount = amount;
+      
+      if (transferAmount > balanceAmount) {
+        setError(`余额不足。当前余额: ${balanceAmount.toLocaleString()} ${form.denom}`);
+        return false;
+      }
 
-    // 检查是否保留足够的代币用于手续费
-    if (form.denom === 'stake' && transferAmount > balanceAmount - 0.01) {
-      setError('请保留一些代币用于支付手续费');
-      return false;
+      // 检查是否保留足够的代币用于手续费
+      if (form.denom === 'stake' && transferAmount > balanceAmount - 0.01) {
+        setError('请保留一些代币用于支付手续费');
+        return false;
+      }
     }
 
     return true;
   };
 
   const handleTransfer = async () => {
-    if (!validateForm() || !currentWallet) return;
+    if (!validateForm()) return;
 
     setIsLoading(true);
     setError(null);
@@ -113,15 +143,30 @@ export const Transfer: React.FC = () => {
 
       console.log('开始转账:', transferForm);
 
-      // 清理助记词
-      const cleanedMnemonic = cleanMnemonic(currentWallet.mnemonic);
+      // 根据选择的钱包来源获取助记词
+      let mnemonic: string;
+      let fromAddress: string;
 
-      const txHash = await cosmosService.transfer(
-        cleanedMnemonic,
-        transferForm
-      );
+      if (walletSource === 'current') {
+        mnemonic = cleanMnemonic(currentWallet!.mnemonic);
+        fromAddress = currentWallet!.address;
+      } else {
+        mnemonic = cleanMnemonic(inputMnemonic);
+        // 临时创建钱包以获取地址
+        const tempWallet = await cosmosService.importWallet(mnemonic);
+        fromAddress = tempWallet.address;
+        
+        // 检查是否向自己转账
+        if (fromAddress === form.toAddress.trim()) {
+          setError('不能向自己转账');
+          setIsLoading(false);
+          return;
+        }
+      }
 
-      setSuccess(`转账成功！\n交易哈希: ${txHash}\n金额: ${form.amount} ${form.denom}\n接收地址: ${form.toAddress}`);
+      const txHash = await cosmosService.transfer(mnemonic, transferForm);
+
+      setSuccess(`转账成功！\n交易哈希: ${txHash}\n发送方: ${fromAddress}\n接收方: ${form.toAddress}\n金额: ${form.amount} ${form.denom}`);
       
       // 重置表单
       setForm({
@@ -131,10 +176,16 @@ export const Transfer: React.FC = () => {
         memo: ''
       });
 
-      // 延迟刷新余额
-      setTimeout(async () => {
-        await getBalances();
-      }, 3000);
+      if (walletSource === 'mnemonic') {
+        setInputMnemonic('');
+      }
+
+      // 如果使用当前钱包，延迟刷新余额
+      if (walletSource === 'current') {
+        setTimeout(async () => {
+          await getBalances();
+        }, 3000);
+      }
       
     } catch (error) {
       console.error('转账失败:', error);
@@ -145,12 +196,18 @@ export const Transfer: React.FC = () => {
   };
 
   const getAvailableBalance = (denom: string): string => {
+    if (walletSource !== 'current') return '使用助记词时无法显示余额';
     const balance = balances.find(b => b.denom === denom);
     if (!balance) return '0';
     return (parseInt(balance.amount) / 1000000).toLocaleString();
   };
 
   const handleMaxAmount = () => {
+    if (walletSource !== 'current') {
+      setError('使用助记词时无法自动计算最大金额，请手动输入');
+      return;
+    }
+
     const balance = balances.find(b => b.denom === form.denom);
     if (balance) {
       const maxAmount = parseInt(balance.amount) / 1000000;
@@ -162,19 +219,6 @@ export const Transfer: React.FC = () => {
       }));
     }
   };
-
-  if (!currentWallet) {
-    return (
-      <div className="transfer">
-        <div className="transfer-header">
-          <h2>转账</h2>
-        </div>
-        <div className="no-wallet">
-          <p>请先创建或导入钱包以使用转账功能</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="transfer">
@@ -197,13 +241,58 @@ export const Transfer: React.FC = () => {
       )}
 
       <div className="transfer-form">
+        {/* 钱包来源选择 */}
         <div className="form-group">
-          <label>发送地址:</label>
-          <div className="sender-address">
-            <span>{currentWallet.address}</span>
+          <label>转账方式:</label>
+          <div className="wallet-source-selector">
+            <select
+              value={walletSource}
+              onChange={(e) => handleWalletSourceChange(e.target.value as WalletSource)}
+              className="wallet-source-select"
+            >
+              <option value="current">使用当前钱包</option>
+              <option value="mnemonic">输入助记词</option>
+            </select>
+          </div>
+          <div className="wallet-source-info">
+            {walletSource === 'current' 
+              ? '使用已选择的钱包进行转账，可查看余额和自动验证'
+              : '通过输入助记词进行转账，适合临时或其他钱包转账'
+            }
           </div>
         </div>
 
+        {/* 发送方信息 */}
+        <div className="form-group">
+          <label>发送地址:</label>
+          {walletSource === 'current' ? (
+            currentWallet ? (
+              <div className="sender-address">
+                <span>{currentWallet.address}</span>
+                <span className="wallet-label">当前钱包</span>
+              </div>
+            ) : (
+              <div className="no-current-wallet">
+                <p>未选择钱包，请先创建或导入钱包，或选择使用助记词转账</p>
+              </div>
+            )
+          ) : (
+            <div className="mnemonic-input-section">
+              <textarea
+                value={inputMnemonic}
+                onChange={(e) => setInputMnemonic(e.target.value)}
+                placeholder="请输入12或24个单词的助记词，用空格分隔"
+                rows={3}
+                className="mnemonic-input"
+              />
+              <div className="mnemonic-hint">
+                💡 提示: 输入助记词后，系统将自动计算发送地址
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 接收地址 */}
         <div className="form-group">
           <label>接收地址:</label>
           <input
@@ -232,6 +321,7 @@ export const Transfer: React.FC = () => {
           </div>
         </div>
 
+        {/* 代币类型 */}
         <div className="form-group">
           <label>代币类型:</label>
           <select
@@ -239,21 +329,31 @@ export const Transfer: React.FC = () => {
             onChange={(e) => handleInputChange('denom', e.target.value)}
             className="denom-select"
           >
-            {balances.length > 0 ? (
+            {walletSource === 'current' && balances.length > 0 ? (
               balances.map((balance, index) => (
                 <option key={index} value={balance.denom}>
                   {balance.denom}
                 </option>
               ))
             ) : (
-              <option value="stake">stake</option>
+              <>
+                <option value="stake">stake</option>
+                <option value="token">token</option>
+                <option value="uatom">uatom</option>
+                <option value="ucosm">ucosm</option>
+              </>
             )}
           </select>
           <div className="balance-info">
-            可用余额: {getAvailableBalance(form.denom)} {form.denom}
+            {walletSource === 'current' ? (
+              `可用余额: ${getAvailableBalance(form.denom)} ${form.denom}`
+            ) : (
+              '使用助记词时无法显示余额，请确保有足够代币'
+            )}
           </div>
         </div>
 
+        {/* 转账金额 */}
         <div className="form-group">
           <label>转账金额:</label>
           <div className="amount-input-group">
@@ -270,12 +370,15 @@ export const Transfer: React.FC = () => {
               onClick={handleMaxAmount}
               className="max-btn"
               type="button"
+              disabled={walletSource !== 'current'}
+              title={walletSource !== 'current' ? '使用助记词时无法自动计算最大值' : '使用最大可用金额'}
             >
               最大值
             </button>
           </div>
         </div>
 
+        {/* 备注 */}
         <div className="form-group">
           <label>备注 (可选):</label>
           <input
@@ -288,18 +391,30 @@ export const Transfer: React.FC = () => {
           />
         </div>
 
+        {/* 转账按钮 */}
         <div className="form-actions">
           <button
             onClick={handleTransfer}
-            disabled={isLoading || !form.toAddress.trim() || !form.amount.trim()}
+            disabled={
+              isLoading || 
+              !form.toAddress.trim() || 
+              !form.amount.trim() ||
+              (walletSource === 'current' && !currentWallet) ||
+              (walletSource === 'mnemonic' && !inputMnemonic.trim())
+            }
             className="transfer-btn"
           >
             {isLoading ? '转账中...' : '确认转账'}
           </button>
         </div>
 
+        {/* 转账信息 */}
         <div className="transfer-info">
           <h4>转账信息</h4>
+          <div className="info-item">
+            <span>转账方式:</span>
+            <span>{walletSource === 'current' ? '当前钱包' : '助记词输入'}</span>
+          </div>
           <div className="info-item">
             <span>预估手续费:</span>
             <span>~0.005 stake</span>
@@ -320,6 +435,7 @@ export const Transfer: React.FC = () => {
           )}
         </div>
 
+        {/* 转账提示 */}
         <div className="transfer-tips">
           <h4>转账提示</h4>
           <ul>
@@ -327,6 +443,7 @@ export const Transfer: React.FC = () => {
             <li>💰 请确保账户有足够的代币支付手续费</li>
             <li>⏰ 交易通常在几秒钟内完成</li>
             <li>📋 建议保存交易哈希用于查询</li>
+            <li>🔐 使用助记词时请确保环境安全</li>
             <li>🛡️ 测试网络仅用于开发和测试</li>
           </ul>
         </div>
