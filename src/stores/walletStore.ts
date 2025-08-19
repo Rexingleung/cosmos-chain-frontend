@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { WalletInfo, Balance } from '../types';
 import { cosmosService } from '../services/cosmosService';
+import { cleanMnemonic, validateMnemonic, getErrorMessage } from '../utils/helpers';
 
 interface WalletState {
   currentWallet: WalletInfo | null;
@@ -46,7 +47,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       get().saveWalletToStorage(wallet);
     } catch (error) {
       set({ 
-        error: error instanceof Error ? error.message : '创建钱包失败',
+        error: getErrorMessage(error),
         isLoading: false 
       });
     }
@@ -55,7 +56,18 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   importWallet: async (mnemonic: string) => {
     set({ isLoading: true, error: null });
     try {
-      const wallet = await cosmosService.importWallet(mnemonic);
+      // 清理和验证助记词
+      const cleanedMnemonic = cleanMnemonic(mnemonic);
+      
+      if (!validateMnemonic(cleanedMnemonic)) {
+        set({ 
+          error: '无效的助记词格式。请确保输入12、15、18、21或24个单词，用空格分隔',
+          isLoading: false 
+        });
+        return;
+      }
+
+      const wallet = await cosmosService.importWallet(cleanedMnemonic);
       const { wallets } = get();
       
       // 检查钱包是否已存在
@@ -78,7 +90,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       get().saveWalletToStorage(wallet);
     } catch (error) {
       set({ 
-        error: error instanceof Error ? error.message : '导入钱包失败',
+        error: getErrorMessage(error),
         isLoading: false 
       });
     }
@@ -99,7 +111,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       set({ balances, isLoading: false });
     } catch (error) {
       set({ 
-        error: error instanceof Error ? error.message : '获取余额失败',
+        error: getErrorMessage(error),
         isLoading: false 
       });
     }
@@ -132,7 +144,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       
       return result;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : '水龙头请求失败';
+      const errorMessage = getErrorMessage(error);
       set({ 
         error: errorMessage,
         isLoading: false 
@@ -163,11 +175,15 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   },
 
   saveWalletToStorage: (wallet: WalletInfo) => {
-    const { wallets } = get();
-    const updatedWallets = wallets.some(w => w.address === wallet.address) 
-      ? wallets 
-      : [...wallets, wallet];
-    localStorage.setItem('cosmos_wallets', JSON.stringify(updatedWallets));
+    try {
+      const { wallets } = get();
+      const updatedWallets = wallets.some(w => w.address === wallet.address) 
+        ? wallets 
+        : [...wallets, wallet];
+      localStorage.setItem('cosmos_wallets', JSON.stringify(updatedWallets));
+    } catch (error) {
+      console.error('保存钱包到本地存储失败:', error);
+    }
   },
 
   loadWalletsFromStorage: () => {
@@ -175,10 +191,19 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       const stored = localStorage.getItem('cosmos_wallets');
       if (stored) {
         const wallets = JSON.parse(stored);
-        set({ wallets });
+        // 验证加载的钱包数据
+        const validWallets = wallets.filter((wallet: any) => 
+          wallet.address && 
+          wallet.mnemonic && 
+          typeof wallet.address === 'string' &&
+          typeof wallet.mnemonic === 'string'
+        );
+        set({ wallets: validWallets });
       }
     } catch (error) {
-      console.error('加载钱包失败:', error);
+      console.error('从本地存储加载钱包失败:', error);
+      // 清除损坏的数据
+      localStorage.removeItem('cosmos_wallets');
     }
   }
 }));
