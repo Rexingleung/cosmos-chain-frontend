@@ -2,6 +2,7 @@ import { StargateClient, SigningStargateClient } from '@cosmjs/stargate';
 import { Tendermint37Client } from '@cosmjs/tendermint-rpc';
 import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { generateMnemonic } from 'bip39';
+import { GasPrice } from '@cosmjs/stargate';
 import { 
   Balance, 
   BlockInfo, 
@@ -136,39 +137,91 @@ export class CosmosService {
     }
   }
 
-  // 转账
+  // 转账 - 修复版本
   async transfer(
     mnemonic: string, 
     transferForm: TransferForm
   ): Promise<string> {
     try {
-      const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
+      console.log('开始转账:', transferForm);
+      
+      // 创建钱包
+      const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic.trim(), {
         prefix: 'cosmos'
       });
       
+      const [account] = await wallet.getAccounts();
+      console.log('发送方地址:', account.address);
+      
+      // 创建签名客户端
+      const gasPrice = GasPrice.fromString(DEFAULT_GAS_PRICE);
       const client = await SigningStargateClient.connectWithSigner(
         CHAIN_CONFIG.rpcEndpoint,
         wallet,
-        { gasPrice: DEFAULT_GAS_PRICE }
+        {
+          gasPrice: gasPrice,
+          prefix: 'cosmos'
+        }
       );
       
-      const [account] = await wallet.getAccounts();
+      // 验证接收地址格式
+      if (!transferForm.toAddress.startsWith('cosmos')) {
+        throw new Error('无效的接收地址格式');
+      }
       
+      // 准备转账参数
+      const amount = [{
+        denom: transferForm.denom,
+        amount: transferForm.amount
+      }];
+      
+      // 自动计算手续费
+      const fee = 'auto';
+      
+      console.log('转账参数:', {
+        from: account.address,
+        to: transferForm.toAddress,
+        amount: amount,
+        fee: fee,
+        memo: transferForm.memo || ''
+      });
+      
+      // 执行转账
       const result = await client.sendTokens(
         account.address,
         transferForm.toAddress,
-        [{ denom: transferForm.denom, amount: transferForm.amount }],
-        {
-          amount: [{ denom: 'stake', amount: '5000' }],
-          gas: DEFAULT_GAS_LIMIT.toString()
-        },
+        amount,
+        fee,
         transferForm.memo || ''
       );
       
+      console.log('转账结果:', result);
+      
+      if (result.code !== 0) {
+        throw new Error(`转账失败: ${result.rawLog || '未知错误'}`);
+      }
+      
       return result.transactionHash;
+      
     } catch (error) {
-      console.error('转账失败:', error);
-      throw error;
+      console.error('转账详细错误:', error);
+      
+      // 提供更友好的错误信息
+      if (error instanceof Error) {
+        if (error.message.includes('insufficient funds')) {
+          throw new Error('余额不足');
+        } else if (error.message.includes('invalid address')) {
+          throw new Error('无效的地址格式');
+        } else if (error.message.includes('Base64')) {
+          throw new Error('钱包助记词格式错误，请检查助记词是否正确');
+        } else if (error.message.includes('Multiple of 4')) {
+          throw new Error('数据编码错误，请重试或重新导入钱包');
+        } else {
+          throw new Error(`转账失败: ${error.message}`);
+        }
+      }
+      
+      throw new Error('转账失败，请检查网络连接和参数');
     }
   }
 
