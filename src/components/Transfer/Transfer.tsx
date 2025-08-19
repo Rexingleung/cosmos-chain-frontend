@@ -142,28 +142,55 @@ export const Transfer: React.FC = () => {
       };
 
       console.log('开始转账:', transferForm);
+      console.log('转账模式:', walletSource);
 
       // 根据选择的钱包来源获取助记词
       let mnemonic: string;
       let fromAddress: string;
 
       if (walletSource === 'current') {
-        mnemonic = cleanMnemonic(currentWallet!.mnemonic);
-        fromAddress = currentWallet!.address;
+        // 使用当前钱包模式
+        if (!currentWallet) {
+          throw new Error('当前钱包不存在');
+        }
+        mnemonic = cleanMnemonic(currentWallet.mnemonic);
+        fromAddress = currentWallet.address;
+        
+        console.log('使用当前钱包:', fromAddress);
       } else {
-        mnemonic = cleanMnemonic(inputMnemonic);
+        // 使用助记词模式
+        if (!inputMnemonic.trim()) {
+          throw new Error('助记词不能为空');
+        }
+        
+        const cleanedMnemonic = cleanMnemonic(inputMnemonic);
+        console.log('清理后的助记词长度:', cleanedMnemonic.split(' ').length);
+        
+        // 再次验证助记词格式
+        if (!validateMnemonic(cleanedMnemonic)) {
+          throw new Error('助记词格式验证失败');
+        }
+        
+        mnemonic = cleanedMnemonic;
+        
         // 临时创建钱包以获取地址
-        const tempWallet = await cosmosService.importWallet(mnemonic);
-        fromAddress = tempWallet.address;
+        try {
+          const tempWallet = await cosmosService.importWallet(mnemonic);
+          fromAddress = tempWallet.address;
+          console.log('从助记词计算的地址:', fromAddress);
+        } catch (importError) {
+          console.error('助记词导入失败:', importError);
+          throw new Error(`助记词无效: ${getErrorMessage(importError)}`);
+        }
         
         // 检查是否向自己转账
         if (fromAddress === form.toAddress.trim()) {
-          setError('不能向自己转账');
-          setIsLoading(false);
-          return;
+          throw new Error('不能向自己转账');
         }
       }
 
+      // 执行转账
+      console.log('执行转账，使用助记词长度:', mnemonic.split(' ').length);
       const txHash = await cosmosService.transfer(mnemonic, transferForm);
 
       setSuccess(`转账成功！\n交易哈希: ${txHash}\n发送方: ${fromAddress}\n接收方: ${form.toAddress}\n金额: ${form.amount} ${form.denom}`);
@@ -188,8 +215,21 @@ export const Transfer: React.FC = () => {
       }
       
     } catch (error) {
-      console.error('转账失败:', error);
-      setError(getErrorMessage(error));
+      console.error('转账失败详细信息:', error);
+      
+      // 更详细的错误处理
+      let errorMessage = getErrorMessage(error);
+      
+      // 特别处理助记词相关错误
+      if (walletSource === 'mnemonic') {
+        if (errorMessage.includes('Base64') || errorMessage.includes('multiple of 4')) {
+          errorMessage = '助记词格式错误。请检查：\n1. 确保单词数量正确（12或24个）\n2. 单词之间用单个空格分隔\n3. 没有多余的换行符或特殊字符\n4. 所有单词都是小写英文';
+        } else if (errorMessage.includes('invalid mnemonic')) {
+          errorMessage = '无效的助记词。请确保助记词正确且完整';
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -281,13 +321,21 @@ export const Transfer: React.FC = () => {
               <textarea
                 value={inputMnemonic}
                 onChange={(e) => setInputMnemonic(e.target.value)}
-                placeholder="请输入12或24个单词的助记词，用空格分隔"
-                rows={3}
+                placeholder="请输入12或24个单词的助记词，用空格分隔&#10;&#10;示例格式：&#10;word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12"
+                rows={4}
                 className="mnemonic-input"
               />
               <div className="mnemonic-hint">
-                💡 提示: 输入助记词后，系统将自动计算发送地址
+                💡 提示: 请确保助记词格式正确 - 12或24个单词，用空格分隔，无多余字符
               </div>
+              {inputMnemonic.trim() && (
+                <div className="mnemonic-validation">
+                  <span>单词数量: {inputMnemonic.trim().split(/\s+/).length}</span>
+                  <span className={validateMnemonic(cleanMnemonic(inputMnemonic)) ? 'valid' : 'invalid'}>
+                    {validateMnemonic(cleanMnemonic(inputMnemonic)) ? '✅ 格式正确' : '❌ 格式错误'}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -400,7 +448,7 @@ export const Transfer: React.FC = () => {
               !form.toAddress.trim() || 
               !form.amount.trim() ||
               (walletSource === 'current' && !currentWallet) ||
-              (walletSource === 'mnemonic' && !inputMnemonic.trim())
+              (walletSource === 'mnemonic' && (!inputMnemonic.trim() || !validateMnemonic(cleanMnemonic(inputMnemonic))))
             }
             className="transfer-btn"
           >
@@ -445,6 +493,9 @@ export const Transfer: React.FC = () => {
             <li>📋 建议保存交易哈希用于查询</li>
             <li>🔐 使用助记词时请确保环境安全</li>
             <li>🛡️ 测试网络仅用于开发和测试</li>
+            {walletSource === 'mnemonic' && (
+              <li>📝 助记词必须是12或24个英文单词，用空格分隔</li>
+            )}
           </ul>
         </div>
       </div>
