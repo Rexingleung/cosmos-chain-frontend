@@ -137,34 +137,60 @@ export class CosmosService {
     }
   }
 
-  // 转账 - 修复版本
+  // 转账 - 增强错误隔离版本
   async transfer(
     mnemonic: string, 
     transferForm: TransferForm
   ): Promise<string> {
+    let wallet: DirectSecp256k1HdWallet | null = null;
+    let client: SigningStargateClient | null = null;
+    
     try {
-      console.log('开始转账:', transferForm);
-      
-      // 创建钱包
-      const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic.trim(), {
-        prefix: 'cosmos'
+      console.log('=== 开始转账流程 ===');
+      console.log('转账参数:', {
+        toAddress: transferForm.toAddress,
+        amount: transferForm.amount,
+        denom: transferForm.denom,
+        memo: transferForm.memo
       });
       
-      const [account] = await wallet.getAccounts();
-      console.log('发送方地址:', account.address);
-      
-      // 创建签名客户端
-      const gasPrice = GasPrice.fromString(DEFAULT_GAS_PRICE);
-      const client = await SigningStargateClient.connectWithSigner(
-        CHAIN_CONFIG.rpcEndpoint,
-        wallet,
-        {
-          gasPrice: gasPrice,
+      // 第一步：创建钱包
+      console.log('步骤1: 创建钱包');
+      try {
+        wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic.trim(), {
           prefix: 'cosmos'
-        }
-      );
+        });
+        console.log('✅ 钱包创建成功');
+      } catch (walletError) {
+        console.error('❌ 钱包创建失败:', walletError);
+        throw new Error('助记词无效或格式错误');
+      }
       
-      // 验证接收地址格式
+      // 第二步：获取账户信息
+      console.log('步骤2: 获取账户信息');
+      const [account] = await wallet.getAccounts();
+      console.log('✅ 发送方地址:', account.address);
+      
+      // 第三步：创建签名客户端
+      console.log('步骤3: 创建签名客户端');
+      try {
+        const gasPrice = GasPrice.fromString(DEFAULT_GAS_PRICE);
+        client = await SigningStargateClient.connectWithSigner(
+          CHAIN_CONFIG.rpcEndpoint,
+          wallet,
+          {
+            gasPrice: gasPrice,
+            prefix: 'cosmos'
+          }
+        );
+        console.log('✅ 签名客户端创建成功');
+      } catch (clientError) {
+        console.error('❌ 签名客户端创建失败:', clientError);
+        throw new Error('无法连接到区块链网络');
+      }
+      
+      // 第四步：验证参数
+      console.log('步骤4: 验证转账参数');
       if (!transferForm.toAddress.startsWith('cosmos')) {
         throw new Error('无效的接收地址格式');
       }
@@ -175,47 +201,96 @@ export class CosmosService {
         amount: transferForm.amount
       }];
       
-      // 自动计算手续费
-      const fee = 'auto';
-      
-      console.log('转账参数:', {
+      const transferParams = {
         from: account.address,
         to: transferForm.toAddress,
         amount: amount,
-        fee: fee,
+        fee: 'auto' as const,
         memo: transferForm.memo || ''
+      };
+      
+      console.log('✅ 转账参数验证通过:', transferParams);
+      
+      // 第五步：执行转账
+      console.log('步骤5: 执行转账交易');
+      let result;
+      try {
+        result = await client.sendTokens(
+          transferParams.from,
+          transferParams.to,
+          transferParams.amount,
+          transferParams.fee,
+          transferParams.memo
+        );
+        console.log('✅ 转账交易执行完成');
+      } catch (sendError) {
+        console.error('❌ 转账交易执行失败:', sendError);
+        // 重新抛出更具体的错误
+        if (sendError instanceof Error) {
+          if (sendError.message.includes('insufficient funds')) {
+            throw new Error('余额不足');
+          } else if (sendError.message.includes('invalid address')) {
+            throw new Error('无效的地址格式');
+          } else {
+            throw new Error(`转账失败: ${sendError.message}`);
+          }
+        }
+        throw new Error('转账交易失败');
+      }
+      
+      // 第六步：验证结果
+      console.log('步骤6: 验证交易结果');
+      console.log('交易结果详情:', {
+        code: result.code,
+        transactionHash: result.transactionHash,
+        gasUsed: result.gasUsed,
+        gasWanted: result.gasWanted
       });
       
-      // 执行转账
-      const result = await client.sendTokens(
-        account.address,
-        transferForm.toAddress,
-        amount,
-        fee,
-        transferForm.memo || ''
-      );
-      
-      console.log('转账结果:', result);
-      
       if (result.code !== 0) {
-        throw new Error(`转账失败: ${result.rawLog || '未知错误'}`);
+        console.error('❌ 交易执行失败，错误代码:', result.code);
+        throw new Error(`转账失败: ${result.rawLog || '交易被区块链拒绝'}`);
       }
+      
+      console.log('✅ 转账成功！交易哈希:', result.transactionHash);
+      console.log('=== 转账流程完成 ===');
       
       return result.transactionHash;
       
     } catch (error) {
-      console.error('转账详细错误:', error);
+      console.error('=== 转账流程发生错误 ===');
+      console.error('错误详情:', error);
       
-      // 提供更友好的错误信息
+      // 确保客户端资源被清理
+      try {
+        if (client) {
+          // 断开客户端连接（如果有这样的方法）
+          // client.disconnect?.();
+        }
+      } catch (cleanupError) {
+        console.warn('客户端清理时发生错误:', cleanupError);
+      }
+      
+      // 处理和重新抛出错误
       if (error instanceof Error) {
-        if (error.message.includes('insufficient funds')) {
-          throw new Error('余额不足');
-        } else if (error.message.includes('invalid address')) {
-          throw new Error('无效的地址格式');
-        } else if (error.message.includes('Base64')) {
-          throw new Error('钱包助记词格式错误，请检查助记词是否正确');
-        } else if (error.message.includes('Multiple of 4')) {
-          throw new Error('数据编码错误，请重试或重新导入钱包');
+        // 如果是我们已经处理过的友好错误，直接抛出
+        if (error.message.includes('助记词无效') || 
+            error.message.includes('余额不足') || 
+            error.message.includes('无效的地址格式') ||
+            error.message.includes('无法连接到区块链网络')) {
+          throw error;
+        }
+        
+        // 处理其他类型的错误
+        const errorMessage = error.message.toLowerCase();
+        if (errorMessage.includes('base64') || errorMessage.includes('multiple of 4')) {
+          throw new Error('助记词格式错误，请检查助记词是否正确');
+        } else if (errorMessage.includes('invalid mnemonic')) {
+          throw new Error('无效的助记词');
+        } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+          throw new Error('网络连接错误，请检查网络状态');
+        } else if (errorMessage.includes('timeout')) {
+          throw new Error('请求超时，请重试');
         } else {
           throw new Error(`转账失败: ${error.message}`);
         }
