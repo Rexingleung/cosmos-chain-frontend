@@ -8,12 +8,15 @@ interface WalletState {
   balances: Balance[];
   isLoading: boolean;
   error: string | null;
+  faucetStatus: { available: boolean; message: string } | null;
   
   // Actions
   createWallet: () => Promise<void>;
   importWallet: (mnemonic: string) => Promise<void>;
   selectWallet: (wallet: WalletInfo) => void;
   getBalances: () => Promise<void>;
+  requestFaucetTokens: (denom?: string, amount?: string) => Promise<{ success: boolean; message: string; txHash?: string }>;
+  checkFaucetStatus: () => Promise<void>;
   clearError: () => void;
   saveWalletToStorage: (wallet: WalletInfo) => void;
   loadWalletsFromStorage: () => void;
@@ -25,6 +28,7 @@ export const useWalletStore = create<WalletState>((set, get) => ({
   balances: [],
   isLoading: false,
   error: null,
+  faucetStatus: null,
 
   createWallet: async () => {
     set({ isLoading: true, error: null });
@@ -97,6 +101,59 @@ export const useWalletStore = create<WalletState>((set, get) => ({
       set({ 
         error: error instanceof Error ? error.message : '获取余额失败',
         isLoading: false 
+      });
+    }
+  },
+
+  requestFaucetTokens: async (denom: string = 'stake', amount?: string) => {
+    const { currentWallet } = get();
+    if (!currentWallet) {
+      throw new Error('请先选择钱包');
+    }
+    
+    set({ isLoading: true, error: null });
+    try {
+      const result = await cosmosService.requestFromFaucet(
+        currentWallet.address,
+        denom,
+        amount
+      );
+      
+      set({ isLoading: false });
+      
+      if (result.success) {
+        // 等待一段时间后刷新余额
+        setTimeout(() => {
+          get().getBalances();
+        }, 3000);
+      } else {
+        set({ error: result.message });
+      }
+      
+      return result;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '水龙头请求失败';
+      set({ 
+        error: errorMessage,
+        isLoading: false 
+      });
+      return {
+        success: false,
+        message: errorMessage
+      };
+    }
+  },
+
+  checkFaucetStatus: async () => {
+    try {
+      const status = await cosmosService.checkFaucetStatus();
+      set({ faucetStatus: status });
+    } catch (error) {
+      set({ 
+        faucetStatus: {
+          available: false,
+          message: '检查水龙头状态失败'
+        }
       });
     }
   },

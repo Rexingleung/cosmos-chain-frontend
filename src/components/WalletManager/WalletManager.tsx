@@ -9,10 +9,13 @@ export const WalletManager: React.FC = () => {
     balances,
     isLoading,
     error,
+    faucetStatus,
     createWallet,
     importWallet,
     selectWallet,
     getBalances,
+    requestFaucetTokens,
+    checkFaucetStatus,
     clearError,
     loadWalletsFromStorage
   } = useWalletStore();
@@ -21,10 +24,12 @@ export const WalletManager: React.FC = () => {
   const [showImportModal, setShowImportModal] = useState(false);
   const [importMnemonic, setImportMnemonic] = useState('');
   const [showMnemonic, setShowMnemonic] = useState(false);
+  const [faucetSuccess, setFaucetSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     loadWalletsFromStorage();
-  }, [loadWalletsFromStorage]);
+    checkFaucetStatus();
+  }, [loadWalletsFromStorage, checkFaucetStatus]);
 
   useEffect(() => {
     if (currentWallet) {
@@ -45,6 +50,18 @@ export const WalletManager: React.FC = () => {
     await importWallet(importMnemonic.trim());
     setShowImportModal(false);
     setImportMnemonic('');
+  };
+
+  const handleRequestFaucet = async (denom: string = 'stake') => {
+    try {
+      const result = await requestFaucetTokens(denom);
+      if (result.success) {
+        setFaucetSuccess(`成功获取 ${denom} 代币！${result.txHash ? `交易哈希: ${result.txHash}` : ''}`);
+        setTimeout(() => setFaucetSuccess(null), 5000);
+      }
+    } catch (error) {
+      console.error('水龙头请求失败:', error);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -85,6 +102,22 @@ export const WalletManager: React.FC = () => {
         </div>
       )}
 
+      {faucetSuccess && (
+        <div className="success-message">
+          <span>{faucetSuccess}</span>
+          <button onClick={() => setFaucetSuccess(null)} className="close-btn">×</button>
+        </div>
+      )}
+
+      {/* 水龙头状态显示 */}
+      {faucetStatus && (
+        <div className="faucet-status">
+          <div className={`status-indicator ${faucetStatus.available ? 'available' : 'unavailable'}`}>
+            💧 水龙头状态: {faucetStatus.message}
+          </div>
+        </div>
+      )}
+
       {currentWallet && (
         <div className="current-wallet">
           <h3>当前钱包</h3>
@@ -118,13 +151,38 @@ export const WalletManager: React.FC = () => {
               ) : (
                 <div className="no-balance">暂无余额</div>
               )}
-              <button 
-                onClick={getBalances}
-                disabled={isLoading}
-                className="refresh-balance-btn"
-              >
-                刷新余额
-              </button>
+              
+              <div className="balance-actions">
+                <button 
+                  onClick={getBalances}
+                  disabled={isLoading}
+                  className="refresh-balance-btn"
+                >
+                  刷新余额
+                </button>
+                
+                {/* 水龙头按钮 */}
+                {faucetStatus?.available && (
+                  <div className="faucet-actions">
+                    <button 
+                      onClick={() => handleRequestFaucet('stake')}
+                      disabled={isLoading}
+                      className="faucet-btn"
+                      title="从水龙头获取 stake 代币"
+                    >
+                      💧 获取 stake
+                    </button>
+                    <button 
+                      onClick={() => handleRequestFaucet('token')}
+                      disabled={isLoading}
+                      className="faucet-btn"
+                      title="从水龙头获取 token 代币"
+                    >
+                      💧 获取 token
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -145,6 +203,20 @@ export const WalletManager: React.FC = () => {
                 </div>
                 {currentWallet?.address === wallet.address && (
                   <span className="active-indicator">当前</span>
+                )}
+                {faucetStatus?.available && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      selectWallet(wallet);
+                      setTimeout(() => handleRequestFaucet('stake'), 100);
+                    }}
+                    disabled={isLoading}
+                    className="mini-faucet-btn"
+                    title="获取代币"
+                  >
+                    💧
+                  </button>
                 )}
               </div>
             ))}
@@ -168,6 +240,9 @@ export const WalletManager: React.FC = () => {
             <div className="modal-content">
               <p>点击下面的按钮创建一个新的钱包。系统将为您生成一个新的地址和助记词。</p>
               <p className="warning">⚠️ 请妥善保管您的助记词，它是恢复钱包的唯一方式。</p>
+              {faucetStatus?.available && (
+                <p className="faucet-info">💧 创建钱包后可以使用水龙头功能获取测试代币。</p>
+              )}
             </div>
             <div className="modal-actions">
               <button onClick={() => setShowCreateModal(false)} className="cancel-btn">
@@ -264,11 +339,27 @@ export const WalletManager: React.FC = () => {
               <p className="warning">
                 ⚠️ 请将助记词保存在安全的地方。这是恢复您钱包的唯一方式，丢失后无法找回！
               </p>
+              {faucetStatus?.available && (
+                <p className="faucet-info">
+                  💧 钱包创建完成后，您可以点击"获取代币"按钮从水龙头获取测试代币。
+                </p>
+              )}
             </div>
             <div className="modal-actions">
               <button onClick={() => setShowMnemonic(false)} className="confirm-btn">
                 我已保存
               </button>
+              {faucetStatus?.available && (
+                <button 
+                  onClick={() => {
+                    setShowMnemonic(false);
+                    handleRequestFaucet('stake');
+                  }}
+                  className="faucet-btn"
+                >
+                  💧 立即获取代币
+                </button>
+              )}
             </div>
           </div>
         </div>

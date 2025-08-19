@@ -172,6 +172,140 @@ export class CosmosService {
     }
   }
 
+  // 水龙头功能 - 请求代币
+  async requestFromFaucet(
+    address: string, 
+    denom: string = 'stake', 
+    amount?: string
+  ): Promise<{ success: boolean; message: string; txHash?: string }> {
+    if (!CHAIN_CONFIG.faucetEndpoint) {
+      throw new Error('水龙头端点未配置');
+    }
+
+    try {
+      // 方法1: 标准的 REST API 调用
+      const faucetUrl = `${CHAIN_CONFIG.faucetEndpoint}`;
+      
+      // 不同的水龙头可能有不同的 API 格式，这里提供几种常见的格式
+      const requestBody = {
+        address: address,
+        denom: denom,
+        amount: amount || '10000000' // 默认 10 个代币（微单位）
+      };
+
+      console.log('正在请求水龙头代币...', { address, denom, amount });
+
+      // 尝试不同的 API 格式
+      const apiFormats = [
+        // 格式1: POST /credit
+        {
+          url: `${faucetUrl}/credit`,
+          method: 'POST',
+          body: requestBody
+        },
+        // 格式2: POST /faucet
+        {
+          url: `${faucetUrl}/faucet`,
+          method: 'POST',
+          body: { address }
+        },
+        // 格式3: GET 参数格式
+        {
+          url: `${faucetUrl}?address=${address}&denom=${denom}`,
+          method: 'GET'
+        },
+        // 格式4: POST /request
+        {
+          url: `${faucetUrl}/request`,
+          method: 'POST',
+          body: { 
+            address,
+            coins: [`${amount || '10000000'}${denom}`]
+          }
+        }
+      ];
+
+      let lastError: any = null;
+
+      for (const format of apiFormats) {
+        try {
+          const response = await fetch(format.url, {
+            method: format.method,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: format.method === 'POST' ? JSON.stringify(format.body) : undefined
+          });
+
+          if (response.ok) {
+            const result = await response.json();
+            console.log('水龙头响应:', result);
+            
+            return {
+              success: true,
+              message: `成功从水龙头获取代币！`,
+              txHash: result.txhash || result.tx_hash || result.hash
+            };
+          } else {
+            const errorText = await response.text();
+            console.warn(`水龙头 API 格式 ${format.url} 失败:`, response.status, errorText);
+            lastError = new Error(`HTTP ${response.status}: ${errorText}`);
+          }
+        } catch (error) {
+          console.warn(`水龙头 API 格式 ${format.url} 异常:`, error);
+          lastError = error;
+        }
+      }
+
+      // 如果所有格式都失败，抛出最后一个错误
+      throw lastError || new Error('所有水龙头 API 格式都失败');
+
+    } catch (error) {
+      console.error('水龙头请求失败:', error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : '水龙头请求失败'
+      };
+    }
+  }
+
+  // 检查水龙头状态
+  async checkFaucetStatus(): Promise<{ available: boolean; message: string }> {
+    if (!CHAIN_CONFIG.faucetEndpoint) {
+      return {
+        available: false,
+        message: '水龙头端点未配置'
+      };
+    }
+
+    try {
+      const response = await fetch(CHAIN_CONFIG.faucetEndpoint, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        return {
+          available: true,
+          message: '水龙头服务可用'
+        };
+      } else {
+        return {
+          available: false,
+          message: `水龙头服务不可用 (HTTP ${response.status})`
+        };
+      }
+    } catch (error) {
+      return {
+        available: false,
+        message: '无法连接到水龙头服务'
+      };
+    }
+  }
+
   // 获取网络状态
   async getNetworkStatus() {
     if (!this.tmClient) {
