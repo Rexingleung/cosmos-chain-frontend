@@ -103,6 +103,7 @@ export const Transfer: React.FC = () => {
     try {
       // 将金额转换为微单位
       const amountInMicroUnits = (parseFloat(form.amount) * 1000000).toString();
+      console.log(form, 'form');
       
       const transferForm: TransferForm = {
         ...form,
