@@ -48,20 +48,6 @@
   flex-shrink: 0;
 }
 
-.no-wallet {
-  background: white;
-  border-radius: 6px;
-  padding: 40px;
-  text-align: center;
-  border: 1px solid #e9ecef;
-}
-
-.no-wallet p {
-  margin: 0;
-  color: #6c757d;
-  font-size: 1.1rem;
-}
-
 .transfer-form {
   background: white;
   border-radius: 6px;
@@ -80,6 +66,38 @@
   color: #495057;
 }
 
+/* 钱包来源选择器样式 */
+.wallet-source-selector {
+  margin-bottom: 8px;
+}
+
+.wallet-source-select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s;
+  cursor: pointer;
+}
+
+.wallet-source-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.wallet-source-info {
+  font-size: 12px;
+  color: #6c757d;
+  background: #f8f9fa;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #007bff;
+}
+
+/* 发送地址样式 */
 .sender-address {
   padding: 12px;
   background: #f8f9fa;
@@ -89,8 +107,79 @@
   font-size: 12px;
   color: #495057;
   word-break: break-all;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
+.wallet-label {
+  background: #007bff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.no-current-wallet {
+  padding: 20px;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.no-current-wallet p {
+  margin: 0;
+  color: #856404;
+  font-size: 14px;
+}
+
+/* 助记词输入区域样式 */
+.mnemonic-input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mnemonic-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  resize: vertical;
+  min-height: 80px;
+  line-height: 1.4;
+  transition: border-color 0.2s;
+}
+
+.mnemonic-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.mnemonic-input::placeholder {
+  color: #6c757d;
+  font-style: italic;
+}
+
+.mnemonic-hint {
+  font-size: 12px;
+  color: #17a2b8;
+  background: #d1ecf1;
+  padding: 8px 12px;
+  border-radius: 4px;
+  border-left: 3px solid #17a2b8;
+}
+
+/* 表单输入样式 */
 .address-input, .amount-input, .memo-input {
   width: 100%;
   padding: 12px;
@@ -148,6 +237,7 @@
   font-size: 14px;
   background: white;
   transition: border-color 0.2s;
+  cursor: pointer;
 }
 
 .denom-select:focus {
@@ -160,6 +250,10 @@
   margin-top: 8px;
   font-size: 12px;
   color: #6c757d;
+  padding: 6px 10px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #28a745;
 }
 
 .amount-input-group {
@@ -183,8 +277,14 @@
   white-space: nowrap;
 }
 
-.max-btn:hover {
+.max-btn:hover:not(:disabled) {
   background: #117a8b;
+}
+
+.max-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .form-actions {
@@ -211,6 +311,7 @@
 .transfer-btn:disabled {
   background: #6c757d;
   cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .transfer-info {
@@ -278,6 +379,7 @@
   margin-bottom: 0;
 }
 
+/* 响应式设计 */
 @media (max-width: 768px) {
   .transfer {
     padding: 15px;
@@ -311,7 +413,13 @@
     gap: 4px;
   }
   
-  .sender-address, .address-input {
+  .sender-address {
+    flex-direction: column;
+    align-items: flex-start;
+    font-size: 11px;
+  }
+  
+  .address-input {
     font-size: 11px;
   }
   
@@ -321,5 +429,28 @@
   
   .transfer-tips ul {
     padding-left: 15px;
+  }
+  
+  .mnemonic-input {
+    font-size: 11px;
+    min-height: 70px;
+  }
+  
+  .wallet-source-info, .mnemonic-hint, .balance-info {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .wallet-source-select, .denom-select {
+    font-size: 14px;
+  }
+  
+  .mnemonic-input {
+    min-height: 60px;
+  }
+  
+  .transfer-tips li {
+    font-size: 12px;
   }
 }
