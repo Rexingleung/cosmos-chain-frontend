@@ -72,7 +72,7 @@ export const ChainInfo: React.FC = () => {
           <>
             <div className="stat-item">
               <label>区块哈希:</label>
-              <span className="stat-value hash">{blockInfo.hash}</span>
+              <span className="stat-value">{blockInfo.hash}</span>
             </div>
             
             <div className="stat-item">
@@ -89,7 +89,7 @@ export const ChainInfo: React.FC = () => {
             
             <div className="stat-item">
               <label>提议者:</label>
-              <span className="stat-value hash">{blockInfo.proposer}</span>
+              <span className="stat-value">{blockInfo.proposer}</span>
             </div>
           </>
         )}
