@@ -18,10 +18,7 @@ export class CosmosService {
   async initClients() {
     try {
       this.tmClient = await Tendermint37Client.connect(CHAIN_CONFIG.rpcEndpoint);
-      this.stargateClient = await StargateClient.connectWithSigner(
-        CHAIN_CONFIG.rpcEndpoint,
-        null as any
-      );
+      this.stargateClient = await StargateClient.connect(CHAIN_CONFIG.rpcEndpoint);
     } catch (error) {
       console.error('初始化客户端失败:', error);
       throw error;
@@ -111,10 +108,19 @@ export class CosmosService {
       const tx = await this.stargateClient!.getTx(txHash);
       if (!tx) return null;
       
+      // 获取区块信息来获取时间戳
+      let timestamp = new Date().toISOString();
+      try {
+        const blockInfo = await this.getBlockInfo(tx.height);
+        timestamp = blockInfo.time;
+      } catch (error) {
+        console.warn('获取区块时间失败:', error);
+      }
+      
       return {
         hash: tx.hash,
         height: tx.height,
-        timestamp: new Date().toISOString(), // 实际实现中需要从区块获取时间戳
+        timestamp: timestamp,
         fee: tx.gasUsed.toString(),
         gas: tx.gasWanted.toString(),
         memo: tx.tx.memo,
