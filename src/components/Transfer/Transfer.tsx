@@ -126,14 +126,18 @@ export const Transfer: React.FC = () => {
   const handleTransfer = async () => {
     if (!validateForm()) return;
 
+    console.log('🚀 前端开始转账流程');
     setIsLoading(true);
     setError(null);
     setSuccess(null);
 
+    // 用于跟踪转账是否真正成功
+    let transferSuccessful = false;
+    let transactionHash = '';
+
     try {
       // 将金额转换为微单位
       const amountInMicroUnits = (parseFloat(form.amount) * 1000000).toString();
-      console.log(form, 'form');
       
       const transferForm: TransferForm = {
         ...form,
@@ -142,8 +146,8 @@ export const Transfer: React.FC = () => {
         memo: form.memo.trim()
       };
 
-      console.log('开始转账:', transferForm);
-      console.log('转账模式:', walletSource);
+      console.log('📝 前端转账参数:', transferForm);
+      console.log('🔧 转账模式:', walletSource);
 
       // 根据选择的钱包来源获取助记词
       let mnemonic: string;
@@ -157,7 +161,7 @@ export const Transfer: React.FC = () => {
         mnemonic = cleanMnemonic(currentWallet.mnemonic);
         fromAddress = currentWallet.address;
         
-        console.log('使用当前钱包:', fromAddress);
+        console.log('👛 使用当前钱包:', fromAddress);
       } else {
         // 使用助记词模式
         if (!inputMnemonic.trim()) {
@@ -165,7 +169,7 @@ export const Transfer: React.FC = () => {
         }
         
         const cleanedMnemonic = cleanMnemonic(inputMnemonic);
-        console.log('清理后的助记词长度:', cleanedMnemonic.split(' ').length);
+        console.log('🔧 清理后的助记词长度:', cleanedMnemonic.split(' ').length);
         
         // 再次验证助记词格式
         if (!validateMnemonic(cleanedMnemonic)) {
@@ -178,9 +182,9 @@ export const Transfer: React.FC = () => {
         try {
           const tempWallet = await cosmosService.importWallet(mnemonic);
           fromAddress = tempWallet.address;
-          console.log('从助记词计算的地址:', fromAddress);
+          console.log('🆔 从助记词计算的地址:', fromAddress);
         } catch (importError) {
-          console.error('助记词导入失败:', importError);
+          console.error('❌ 助记词导入失败:', importError);
           throw new Error(`助记词无效: ${getErrorMessage(importError)}`);
         }
         
@@ -190,49 +194,82 @@ export const Transfer: React.FC = () => {
         }
       }
 
-      // 执行转账
-      console.log('执行转账，使用助记词长度:', mnemonic.split(' ').length);
-      const txHash = await cosmosService.transfer(mnemonic, transferForm);
-
-      setSuccess(`转账成功！\n交易哈希: ${txHash}\n发送方: ${fromAddress}\n接收方: ${form.toAddress}\n金额: ${form.amount} ${form.denom}`);
+      // 执行转账 - 关键步骤
+      console.log('💸 开始执行转账...');
       
-      // 重置表单
-      setForm({
-        toAddress: '',
-        amount: '',
-        denom: 'stake',
-        memo: ''
-      });
+      try {
+        // 调用转账服务
+        transactionHash = await cosmosService.transfer(mnemonic, transferForm);
+        
+        // 如果到达这里，说明转账成功了
+        transferSuccessful = true;
+        console.log('✅ 转账成功！交易哈希:', transactionHash);
+        
+        // 设置成功状态
+        setSuccess(`转账成功！\n交易哈希: ${transactionHash}\n发送方: ${fromAddress}\n接收方: ${form.toAddress}\n金额: ${form.amount} ${form.denom}`);
+        
+        // 重置表单
+        setForm({
+          toAddress: '',
+          amount: '',
+          denom: 'stake',
+          memo: ''
+        });
 
-      if (walletSource === 'mnemonic') {
-        setInputMnemonic('');
-      }
+        if (walletSource === 'mnemonic') {
+          setInputMnemonic('');
+        }
 
-      // 如果使用当前钱包，延迟刷新余额
-      if (walletSource === 'current') {
-        setTimeout(async () => {
-          await getBalances();
-        }, 3000);
+        // 如果使用当前钱包，延迟刷新余额
+        if (walletSource === 'current') {
+          console.log('🔄 计划刷新余额...');
+          setTimeout(async () => {
+            try {
+              await getBalances();
+              console.log('✅ 余额刷新完成');
+            } catch (balanceError) {
+              console.warn('⚠️ 余额刷新失败:', balanceError);
+            }
+          }, 3000);
+        }
+        
+      } catch (transferError) {
+        // 转账服务层的错误
+        console.error('❌ 转账服务层错误:', transferError);
+        throw transferError; // 重新抛出，让外层catch处理
       }
       
     } catch (error) {
-      console.error('转账失败详细信息:', error);
+      console.error('💥 前端转账流程错误:', error);
       
-      // 更详细的错误处理
-      let errorMessage = getErrorMessage(error);
-      
-      // 特别处理助记词相关错误
-      if (walletSource === 'mnemonic') {
-        if (errorMessage.includes('Base64') || errorMessage.includes('multiple of 4')) {
-          errorMessage = '助记词格式错误。请检查：\n1. 确保单词数量正确（12或24个）\n2. 单词之间用单个空格分隔\n3. 没有多余的换行符或特殊字符\n4. 所有单词都是小写英文';
-        } else if (errorMessage.includes('invalid mnemonic')) {
-          errorMessage = '无效的助记词。请确保助记词正确且完整';
+      // 只有在转账确实失败时才显示错误
+      if (!transferSuccessful) {
+        // 更详细的错误处理
+        let errorMessage = getErrorMessage(error);
+        
+        // 特别处理助记词相关错误
+        if (walletSource === 'mnemonic') {
+          if (errorMessage.includes('Base64') || errorMessage.includes('multiple of 4')) {
+            errorMessage = '助记词格式错误。请检查：\n1. 确保单词数量正确（12或24个）\n2. 单词之间用单个空格分隔\n3. 没有多余的换行符或特殊字符\n4. 所有单词都是小写英文';
+          } else if (errorMessage.includes('invalid mnemonic')) {
+            errorMessage = '无效的助记词。请确保助记词正确且完整';
+          }
         }
+        
+        setError(errorMessage);
+      } else {
+        // 转账成功了，但后续处理有问题，不要覆盖成功消息
+        console.warn('⚠️ 转账成功但后续处理有问题:', error);
       }
-      
-      setError(errorMessage);
     } finally {
       setIsLoading(false);
+      
+      // 总结日志
+      if (transferSuccessful) {
+        console.log('🎉 前端转账流程完成 - 成功');
+      } else {
+        console.log('❌ 前端转账流程完成 - 失败');
+      }
     }
   };
 
