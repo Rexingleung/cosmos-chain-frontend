@@ -7,7 +7,6 @@ export const CHAIN_CONFIG: ChainInfo = {
   faucetEndpoint: 'http://localhost:4500'
 };
 
-// 修正Gas价格格式
 export const DEFAULT_GAS_PRICE = '0.0025stake';  // 降低Gas价格
 export const DEFAULT_GAS_LIMIT = 200000;
 

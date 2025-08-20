@@ -18,8 +18,15 @@ export class CosmosService {
 
   async initClients() {
     try {
-      this.tmClient = await Tendermint37Client.connect(CHAIN_CONFIG.rpcEndpoint);
-      this.stargateClient = await StargateClient.connect(CHAIN_CONFIG.rpcEndpoint);
+      if (this.tmClient === null) {
+        console.log(5);
+        
+        this.tmClient = await Tendermint37Client.connect(CHAIN_CONFIG.rpcEndpoint);
+      }
+      if (this.stargateClient === null) {
+        console.log(7);
+        this.stargateClient = await StargateClient.connect(CHAIN_CONFIG.rpcEndpoint);
+      }
     } catch (error) {
       console.error('初始化客户端失败:', error);
       throw error;
@@ -117,12 +124,6 @@ export class CosmosService {
       } catch (error) {
         console.warn('获取区块时间失败:', error);
       }
-      console.log(tx.tx, 'tx.tx');
-      const decoder = new TextDecoder('utf-8');
-      const utf8String = decoder.decode(tx.tx);
-      const decoderWithErrorHandling = new TextDecoder('utf-8', { fatal: false });
-const result = decoderWithErrorHandling.decode(tx.tx);
-      console.log(utf8String, result); // "Hello"
       return {
         hash: tx.hash,
         height: tx.height,
@@ -236,15 +237,15 @@ const result = decoderWithErrorHandling.decode(tx.tx);
       // 第七步：验证结果
       console.log('步骤7: 验证交易结果');
       console.log('交易结果详情:', {
-        code: result.code,
-        transactionHash: result.transactionHash,
-        gasUsed: result.gasUsed,
-        gasWanted: result.gasWanted
+        code: result?.code,
+        transactionHash: result?.transactionHash,
+        gasUsed: result?.gasUsed,
+        gasWanted: result?.gasWanted
       });
       
-      if (result.code !== 0) {
-        console.error('❌ 交易执行失败，错误代码:', result.code);
-        throw new Error(`转账失败: ${result.rawLog || '交易被区块链拒绝'}`);
+      if (result?.code !== 0) {
+        console.error('❌ 交易执行失败，错误代码:', result?.code);
+        throw new Error(`转账失败: ${result?.rawLog || '交易被区块链拒绝'}`);
       }
       
       console.log('✅ 转账成功！交易哈希:', result.transactionHash);
