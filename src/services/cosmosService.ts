@@ -117,19 +117,21 @@ export class CosmosService {
       } catch (error) {
         console.warn('获取区块时间失败:', error);
       }
-      
+      console.log(tx.tx, 'tx.tx');
+      const decoder = new TextDecoder('utf-8');
+      const utf8String = decoder.decode(tx.tx);
+      const decoderWithErrorHandling = new TextDecoder('utf-8', { fatal: false });
+const result = decoderWithErrorHandling.decode(tx.tx);
+      console.log(utf8String, result); // "Hello"
       return {
         hash: tx.hash,
         height: tx.height,
         timestamp: timestamp,
         fee: tx.gasUsed.toString(),
         gas: tx.gasWanted.toString(),
-        memo: tx.tx.memo,
+        memo: '',
         success: tx.code === 0,
-        messages: tx.tx.body.messages.map(msg => ({
-          type: msg.typeUrl,
-          // 根据实际消息类型解析更多字段
-        }))
+        messages: [] as any[]
       };
     } catch (error) {
       console.error('获取交易失败:', error);
@@ -177,12 +179,13 @@ export class CosmosService {
       console.log('步骤3: 创建签名客户端');
       try {
         const gasPrice = GasPrice.fromString(DEFAULT_GAS_PRICE);
+        console.log(DEFAULT_GAS_PRICE, 'DEFAULT_GAS_PRICE');
+        
         client = await SigningStargateClient.connectWithSigner(
           CHAIN_CONFIG.rpcEndpoint,
           wallet,
           {
-            gasPrice: gasPrice,
-            prefix: 'cosmos'
+            gasPrice,
           }
         );
         console.log('✅ 签名客户端创建成功');
@@ -198,105 +201,36 @@ export class CosmosService {
       if (!transferForm.toAddress.startsWith('cosmos')) {
         throw new Error('无效的接收地址格式');
       }
-      
       // 确保参数类型正确
       const fromAddress = account.address;
       const toAddress = transferForm.toAddress.trim();
       const amount = [{
         denom: transferForm.denom.trim(),
-        amount: transferForm.amount.toString() // 确保是字符串
+        amount: transferForm.amount.toString()
       }];
-      const memo = transferForm.memo?.trim() || '';
       
       console.log('✅ 参数验证通过:', {
         fromAddress,
         toAddress,
         amount,
-        memo
       });
-      
-      // 第五步：计算固定手续费（避免 "auto" 可能引起的问题）
-      console.log('步骤5: 计算手续费');
-      let fee;
-      try {
-        const gasPrice = GasPrice.fromString(DEFAULT_GAS_PRICE);
-        fee = calculateFee(DEFAULT_GAS_LIMIT, gasPrice);
-        console.log('✅ 手续费计算成功:', fee);
-      } catch (feeError) {
-        console.warn('⚠️ 手续费计算失败，使用默认值:', feeError);
-        // 备用手续费设置
-        fee = {
-          amount: [{ denom: 'stake', amount: '5000' }],
-          gas: DEFAULT_GAS_LIMIT.toString()
-        };
-      }
       
       // 第六步：执行转账（修复版本）
       console.log('步骤6: 执行转账交易');
       let result;
       try {
         // 方法1：使用固定手续费
-        console.log('尝试方法1: 使用固定手续费');
+        console.log('使用固定手续费');
         result = await client.sendTokens(
           fromAddress,
           toAddress,
           amount,
-          fee,
-          memo
+          "auto",
         );
-        console.log('✅ 方法1成功');
+        console.log('✅ 方法1成功'); // 这里无法打印
       } catch (sendError1) {
-        console.warn('⚠️ 方法1失败，尝试方法2:', sendError1);
+        console.log("sendError1", sendError1);
         
-        try {
-          // 方法2：使用更简单的手续费设置
-          console.log('尝试方法2: 使用简化手续费');
-          const simpleFee = {
-            amount: [{ denom: 'stake', amount: '5000' }],
-            gas: '200000'
-          };
-          
-          result = await client.sendTokens(
-            fromAddress,
-            toAddress,
-            amount,
-            simpleFee,
-            memo
-          );
-          console.log('✅ 方法2成功');
-        } catch (sendError2) {
-          console.warn('⚠️ 方法2失败，尝试方法3:', sendError2);
-          
-          try {
-            // 方法3：使用最基础的参数
-            console.log('尝试方法3: 使用最基础参数');
-            result = await client.sendTokens(
-              fromAddress,
-              toAddress,
-              amount,
-              'auto',
-              '' // 空memo避免编码问题
-            );
-            console.log('✅ 方法3成功');
-          } catch (sendError3) {
-            console.error('❌ 所有方法都失败:', sendError3);
-            
-            // 更详细的错误分析
-            if (sendError3 instanceof Error) {
-              const errorMsg = sendError3.message.toLowerCase();
-              if (errorMsg.includes('base64') || errorMsg.includes('multiple of 4')) {
-                throw new Error('数据编码错误，可能是助记词或地址格式问题');
-              } else if (errorMsg.includes('insufficient funds')) {
-                throw new Error('余额不足');
-              } else if (errorMsg.includes('invalid address')) {
-                throw new Error('无效的地址格式');
-              } else {
-                throw new Error(`转账失败: ${sendError3.message}`);
-              }
-            }
-            throw new Error('转账交易失败');
-          }
-        }
       }
       
       // 第七步：验证结果

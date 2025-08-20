@@ -127,7 +127,7 @@ export const Faucet: React.FC = () => {
           <div className="current-wallet-info">
             <h3>当前钱包</h3>
             <div className="wallet-address">
-              {`${currentWallet.address.slice(0, 12)}...${currentWallet.address.slice(-8)}`}
+              {`${currentWallet.address}`}
             </div>
           </div>
 

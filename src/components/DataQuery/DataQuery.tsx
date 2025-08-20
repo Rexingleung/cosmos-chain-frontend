@@ -99,7 +99,7 @@ export const DataQuery: React.FC = () => {
         </div>
         <div className="result-item">
           <label>哈希:</label>
-          <div className="hash-value">
+          <div className="">
             <span>{block.hash}</span>
             <button onClick={() => copyToClipboard(block.hash)} className="copy-btn">📋</button>
           </div>
@@ -114,7 +114,7 @@ export const DataQuery: React.FC = () => {
         </div>
         <div className="result-item">
           <label>提议者:</label>
-          <div className="hash-value">
+          <div className="">
             <span>{block.proposer}</span>
             <button onClick={() => copyToClipboard(block.proposer)} className="copy-btn">📋</button>
           </div>
