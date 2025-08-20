@@ -2,7 +2,7 @@ import { StargateClient, SigningStargateClient } from '@cosmjs/stargate';
 import { Tendermint37Client } from '@cosmjs/tendermint-rpc';
 import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { generateMnemonic } from 'bip39';
-import { GasPrice } from '@cosmjs/stargate';
+import { GasPrice, calculateFee } from '@cosmjs/stargate';
 import { 
   Balance, 
   BlockInfo, 
@@ -137,7 +137,7 @@ export class CosmosService {
     }
   }
 
-  // 转账 - 增强错误隔离版本
+  // 转账 - 修复 sendTokens Base64 错误
   async transfer(
     mnemonic: string, 
     transferForm: TransferForm
@@ -157,7 +157,9 @@ export class CosmosService {
       // 第一步：创建钱包
       console.log('步骤1: 创建钱包');
       try {
-        wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic.trim(), {
+        // 确保助记词格式正确
+        const cleanMnemonic = mnemonic.trim().replace(/\s+/g, ' ');
+        wallet = await DirectSecp256k1HdWallet.fromMnemonic(cleanMnemonic, {
           prefix: 'cosmos'
         });
         console.log('✅ 钱包创建成功');
@@ -189,57 +191,116 @@ export class CosmosService {
         throw new Error('无法连接到区块链网络');
       }
       
-      // 第四步：验证参数
-      console.log('步骤4: 验证转账参数');
+      // 第四步：验证和准备参数
+      console.log('步骤4: 验证和准备转账参数');
+      
+      // 验证地址格式
       if (!transferForm.toAddress.startsWith('cosmos')) {
         throw new Error('无效的接收地址格式');
       }
       
-      // 准备转账参数
+      // 确保参数类型正确
+      const fromAddress = account.address;
+      const toAddress = transferForm.toAddress.trim();
       const amount = [{
-        denom: transferForm.denom,
-        amount: transferForm.amount
+        denom: transferForm.denom.trim(),
+        amount: transferForm.amount.toString() // 确保是字符串
       }];
+      const memo = transferForm.memo?.trim() || '';
       
-      const transferParams = {
-        from: account.address,
-        to: transferForm.toAddress,
-        amount: amount,
-        fee: 'auto' as const,
-        memo: transferForm.memo || ''
-      };
+      console.log('✅ 参数验证通过:', {
+        fromAddress,
+        toAddress,
+        amount,
+        memo
+      });
       
-      console.log('✅ 转账参数验证通过:', transferParams);
-      
-      // 第五步：执行转账
-      console.log('步骤5: 执行转账交易');
-      let result;
+      // 第五步：计算固定手续费（避免 "auto" 可能引起的问题）
+      console.log('步骤5: 计算手续费');
+      let fee;
       try {
-        result = await client.sendTokens(
-          transferParams.from,
-          transferParams.to,
-          transferParams.amount,
-          transferParams.fee,
-          transferParams.memo
-        );
-        console.log('✅ 转账交易执行完成');
-      } catch (sendError) {
-        console.error('❌ 转账交易执行失败:', sendError);
-        // 重新抛出更具体的错误
-        if (sendError instanceof Error) {
-          if (sendError.message.includes('insufficient funds')) {
-            throw new Error('余额不足');
-          } else if (sendError.message.includes('invalid address')) {
-            throw new Error('无效的地址格式');
-          } else {
-            throw new Error(`转账失败: ${sendError.message}`);
-          }
-        }
-        throw new Error('转账交易失败');
+        const gasPrice = GasPrice.fromString(DEFAULT_GAS_PRICE);
+        fee = calculateFee(DEFAULT_GAS_LIMIT, gasPrice);
+        console.log('✅ 手续费计算成功:', fee);
+      } catch (feeError) {
+        console.warn('⚠️ 手续费计算失败，使用默认值:', feeError);
+        // 备用手续费设置
+        fee = {
+          amount: [{ denom: 'stake', amount: '5000' }],
+          gas: DEFAULT_GAS_LIMIT.toString()
+        };
       }
       
-      // 第六步：验证结果
-      console.log('步骤6: 验证交易结果');
+      // 第六步：执行转账（修复版本）
+      console.log('步骤6: 执行转账交易');
+      let result;
+      try {
+        // 方法1：使用固定手续费
+        console.log('尝试方法1: 使用固定手续费');
+        result = await client.sendTokens(
+          fromAddress,
+          toAddress,
+          amount,
+          fee,
+          memo
+        );
+        console.log('✅ 方法1成功');
+      } catch (sendError1) {
+        console.warn('⚠️ 方法1失败，尝试方法2:', sendError1);
+        
+        try {
+          // 方法2：使用更简单的手续费设置
+          console.log('尝试方法2: 使用简化手续费');
+          const simpleFee = {
+            amount: [{ denom: 'stake', amount: '5000' }],
+            gas: '200000'
+          };
+          
+          result = await client.sendTokens(
+            fromAddress,
+            toAddress,
+            amount,
+            simpleFee,
+            memo
+          );
+          console.log('✅ 方法2成功');
+        } catch (sendError2) {
+          console.warn('⚠️ 方法2失败，尝试方法3:', sendError2);
+          
+          try {
+            // 方法3：使用最基础的参数
+            console.log('尝试方法3: 使用最基础参数');
+            result = await client.sendTokens(
+              fromAddress,
+              toAddress,
+              amount,
+              'auto',
+              '' // 空memo避免编码问题
+            );
+            console.log('✅ 方法3成功');
+          } catch (sendError3) {
+            console.error('❌ 所有方法都失败:', sendError3);
+            
+            // 更详细的错误分析
+            if (sendError3 instanceof Error) {
+              const errorMsg = sendError3.message.toLowerCase();
+              if (errorMsg.includes('base64') || errorMsg.includes('multiple of 4')) {
+                throw new Error('数据编码错误，可能是助记词或地址格式问题');
+              } else if (errorMsg.includes('insufficient funds')) {
+                throw new Error('余额不足');
+              } else if (errorMsg.includes('invalid address')) {
+                throw new Error('无效的地址格式');
+              } else {
+                throw new Error(`转账失败: ${sendError3.message}`);
+              }
+            }
+            throw new Error('转账交易失败');
+          }
+        }
+      }
+      
+      // 第七步：验证结果
+      console.log('步骤7: 验证交易结果');
       console.log('交易结果详情:', {
         code: result.code,
         transactionHash: result.transactionHash,
@@ -277,14 +338,15 @@ export class CosmosService {
         if (error.message.includes('助记词无效') || 
             error.message.includes('余额不足') || 
             error.message.includes('无效的地址格式') ||
-            error.message.includes('无法连接到区块链网络')) {
+            error.message.includes('无法连接到区块链网络') ||
+            error.message.includes('数据编码错误')) {
           throw error;
         }
         
         // 处理其他类型的错误
         const errorMessage = error.message.toLowerCase();
         if (errorMessage.includes('base64') || errorMessage.includes('multiple of 4')) {
-          throw new Error('助记词格式错误，请检查助记词是否正确');
+          throw new Error('数据编码错误，请检查助记词和地址格式');
         } else if (errorMessage.includes('invalid mnemonic')) {
           throw new Error('无效的助记词');
         } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
